@@ -2,17 +2,18 @@
 
 OptiOR is a web-based application designed to help hospitals analyze operating room (OR) utilization and predict surgery durations. It provides an interactive dashboard for visualizing historical data and a machine learning tool to estimate future case times.
 
-The application consists of a Flask backend that serves data and a Streamlit frontend that provides a user-friendly interface for interaction.
+The application consists of a **Flask** backend that serves a REST API and a **Next.js (React)** frontend that provides a modern, interactive user interface.
 
 ---
 
 ## Features
 
-- **Interactive Dashboard**: View daily OR schedules, case distribution by surgical specialty, and average surgery durations.
-- **Surgery Duration Prediction**: Uses a machine learning model (Random Forest Regressor) to predict the duration of a new surgery based on its characteristics.
-- **On-Demand Model Retraining**: Trigger a retraining of the ML model on the latest data directly from the UI.
-- **Automated Data Seeding**: Initializes the database from a sample CSV file.
-- **RESTful API**: A clean backend API to manage data and predictions.
+- **Interactive Schedule**: View daily and monthly OR schedules using a full-featured calendar.
+- **Drag-and-Drop Scheduling**: Update surgery times and assignments by dragging events on the calendar.
+- **Surgery Duration Prediction**: Uses a machine learning model to predict the duration of a new surgery based on its characteristics.
+- **Analytics Dashboard**: Visualize key metrics like case distribution, OR suite utilization, and average surgery durations.
+- **Dynamic Data Seeding**: Initializes the database with a full year of realistic, procedurally generated data.
+- **RESTful API**: A clean backend API to manage cases, doctors, and predictions.
 
 ---
 
@@ -20,18 +21,20 @@ The application consists of a Flask backend that serves data and a Streamlit fro
 
 ```
 OptiOR/
-├── data/                  # CSV input files for seeding
-│   └── 2022_Q1_OR_Utilization.csv
+├── web-app/               # Next.js/React Frontend
+│   ├── app/
+│   ├── components/
+│   ├── package.json
+│   └── ...
 ├── database/              # DB configuration and SQLAlchemy schema
 │   ├── config.py
-│   ├── schema.py
-│   └── or_database.db     # SQLite database file
+│   └── schema.py
 ├── models/                # Stores the trained machine learning model
 │   └── OptiOR.joblib
-├── notebooks/             # Jupyter notebooks for analysis
-├── client.py              # Streamlit frontend application
-├── server.py              # Flask backend server
-├── requirements.txt       # Project dependencies
+├── server_new.py          # Flask backend server
+├── start_app.py           # Main script to run the application
+├── seed_2025.py           # Script to seed the database
+├── requirements.txt       # Python project dependencies
 └── README.md
 ```
 
@@ -43,65 +46,72 @@ Follow these steps to get the application running locally.
 
 ### 1. Install Dependencies
 
+The project requires both Python and Node.js dependencies.
+
+**A. Python Dependencies**
+
 First, install the required Python packages from `requirements.txt`:
 
 ```bash
 pip install -r requirements.txt
 ```
 
-### 2. Start the Backend Server
+**B. Frontend Dependencies**
 
-The backend is a Flask application. Run the following command in your terminal:
-
-```bash
-python server.py
-```
-
-The backend API will be available at `http://127.0.0.1:5000`.
-
-### 3. Seed the Database (One-Time Step)
-
-Before using the application for the first time, you must populate the database with the sample data. The server must be running.
-
-Open a **new terminal** and run the following `curl` command to send a request to the seeding endpoint:
+Navigate to the `web-app` directory and install the Node.js packages:
 
 ```bash
-curl -X POST http://127.0.0.1:5000/api/seed
+cd web-app
+npm install
+cd ..
 ```
 
-This will load the data from `data/2022_Q1_OR_Utilization.csv` into the database and train the initial machine learning model. You should see a success message in the response.
+### 2. Seed the Database (One-Time Step)
 
-### 4. Start the Frontend Application
-
-With the backend still running, open a **third terminal** and start the Streamlit frontend:
+Before using the application for the first time, you must populate the database with sample data. Run the following command from the project root:
 
 ```bash
-streamlit run client.py
+python seed_2025.py
 ```
 
-Your web application will open in your browser, and you can access it at:
+This will generate and load a full year of data into the SQLite database (`database/or_database.db`).
 
+### 3. Start the Application
+
+The easiest way to run the application is to use the provided `start_app.py` script. This will launch both the backend and frontend servers concurrently.
+
+```bash
+python start_app.py
 ```
-http://localhost:8501
-```
+
+The script will output the URLs for both services:
+
+-   **Backend API**: `http://127.0.0.1:5000`
+-   **Frontend App**: `http://localhost:3000`
+
+You can now open `http://localhost:3000` in your browser to use the application.
 
 ---
 
 ## How to Use the Application
 
-- **Dashboard**: Open the application to view the main dashboard. Use the date picker to explore the OR schedule for different days.
-- **Predict Duration**: Navigate to the "Predict Duration" page from the sidebar to get an estimated surgery time.
-- **Retrain Model**: Use the "Retrain Model" button in the sidebar to update the prediction model with the latest data from the database.
+-   **Dashboard**: Open the application to view the main dashboard and analytics.
+-   **Schedule**: Navigate to the "Schedule" page to see the interactive calendar.
+-   **Add a Case**: Click on a date in the calendar to open a modal and schedule a new surgery. The system will provide a predicted duration.
+-   **Update a Case**: Drag and drop existing surgeries to reschedule them.
 
 ---
 
 ## API Endpoints
 
-The Flask server provides the following API endpoints:
+The Flask server (`server_new.py`) provides the following API endpoints:
 
-- `POST /api/seed`: Seeds the database from the CSV file.
-- `DELETE /api/clear`: Clears all records from the database.
-- `GET /api/schedule`: Retrieves scheduled cases for a specified date.
-- `GET /api/analytics`: Provides aggregate data for dashboard charts.
-- `POST /api/predict`: Predicts surgery duration for a new case.
-- `POST /api/retrain`: Retrains the machine learning model.
+-   `GET /api/cases`: Retrieves all scheduled cases.
+-   `POST /api/cases`: Creates a new surgery case.
+-   `PUT /api/cases/<int:case_id>`: Updates an existing case.
+-   `DELETE /api/cases/<int:case_id>`: Deletes a case.
+-   `GET /api/doctors`: Returns a list of available doctors grouped by specialty.
+-   `POST /api/predict_suggestion`: Provides a duration prediction for a new, unsaved case.
+-   `POST /api/predict_average`: Provides a duration prediction based on historical averages for a given service.
+-   `GET /api/analytics`: Retrieves aggregate data for dashboard charts (e.g., case counts, average durations).
+-   `GET /api/analytics/status`: Retrieves high-level stats for the dashboard header.
