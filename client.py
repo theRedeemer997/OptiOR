@@ -132,6 +132,14 @@ elif page == "Predict Duration":
             service = st.selectbox("Surgical Specialty", 
                                  ['Orthopedics', 'General', 'Cardiology', 'Urology', 'Thoracic', 
                                   'Neurology', 'Otology', 'Vascular', 'Podiatry', 'Ophthalmology'])
+            
+            # --- FIX 2: Add Complexity Dropdown ---
+            complexity_label = st.selectbox("Procedure Complexity", 
+                                          ["Low (Routine)", "Medium (Standard)", "High (Complex)"])
+            
+            # Map the text label to a number (1, 2, 3) for the backend
+            complexity_map = {"Low (Routine)": 1, "Medium (Standard)": 2, "High (Complex)": 3}
+            complexity_score = complexity_map[complexity_label]
         
         with col2:
             booked_time = st.number_input("Booked Time (minutes)", min_value=10, value=60)
@@ -146,12 +154,12 @@ elif page == "Predict Duration":
                     "date": str(surgery_date),
                     "service": service,
                     "booked_time": booked_time,
-                    "or_suite": or_suite
+                    "or_suite": or_suite,
+                    "complexity": complexity_score
                 }
                 
                 try:
                     response = requests.post(f"{API_URL}/predict", json=payload)
-                    
                     if response.status_code == 200:
                         result = response.json()
                         st.success("Prediction Complete!")

@@ -28,7 +28,6 @@ init_db(server)
 model = None
 
 # --- Migration Function (CSV -> DB) ---
-# In app.py
 
 def seed_database_logic():
     """Reads CSV and populates DB if empty"""
@@ -39,7 +38,7 @@ def seed_database_logic():
             df = pd.read_csv('./data/2022_Q1_OR_Utilization.csv')
             
             # --- FIX STARTS HERE ---
-            # 1. Parse Dates directly (Do NOT concatenate Date column)
+            # 1. Parse Dates directly
             # The CSV format is likely "MM/DD/YY HH:MM AM" which pandas handles automatically
             df['Date'] = pd.to_datetime(df['Date'], errors='coerce')
             df['Wheels In'] = pd.to_datetime(df['Wheels In'], errors='coerce')
@@ -63,7 +62,7 @@ def seed_database_logic():
                 'actual_duration': df_clean['Actual Duration'],
                 'patient_name': None,
                 'is_prediction': False,
-                'timestamp': datetime.now() # Updated from utcnow() to avoid deprecation warning
+                'timestamp': datetime.now()
             })
             
             db_df.to_sql('surgery_case', con=db.engine, if_exists='append', index=False)
@@ -78,11 +77,10 @@ def seed_database_logic():
         logger.error(f"Migration Failed: {e}")
         return False, str(e)
 
-# --- Training Function ---
 def train_model():
     logger.info("Loading training data from Database...")
     try:
-        # Use pandas read_sql to fetch data
+        # 1. Fetch data
         query = "SELECT * FROM surgery_case WHERE actual_duration IS NOT NULL"
         df = pd.read_sql(query, db.engine)
         
@@ -90,24 +88,49 @@ def train_model():
             logger.warning("No training data found in DB.")
             return None
 
-        # Feature Eng
+        # --- Remove Outliers ---
+        # Only keep surgeries between 15 mins and 8 hours (480 mins)
+        # This prevents 1-minute test entries or 24-hour errors from confusing the AI.
+        df = df[(df['actual_duration'] > 15) & (df['actual_duration'] < 480)]
+
+        # --- Feature Engineering ---
         df['date'] = pd.to_datetime(df['date'])
         df['day_of_week'] = df['date'].dt.dayofweek
         
-        features = ['service', 'booked_time', 'day_of_week']
+        # Convert 'or_suite' to string so the model treats it as a category (Room "1" vs Room "2")
+        # instead of a number (where Room 2 is "double" Room 1).
+        df['or_suite'] = df['or_suite'].astype(str) 
+
+        # We define the features we want to learn from
+        features = ['service', 'booked_time', 'day_of_week', 'or_suite']
+        
+        # If 'complexity' exists in your DB (from Fix 2), add it. Otherwise, ignore it.
+        if 'complexity' in df.columns:
+            features.append('complexity')
+
         X = df[features]
-        # target variable
         y = df['actual_duration']
 
-        # looks for booked_time and day_of_week and if there is some null vlaue anywhere it inserts the median
+        
+        # We need to tell the model which columns are Categories (Text) and which are Numbers.
+        categorical_cols = ['service', 'or_suite']
+        numerical_cols = ['booked_time', 'day_of_week']
+        
+        if 'complexity' in features:
+            numerical_cols.append('complexity')
+
         preprocessor = ColumnTransformer(
             transformers=[
-                ('num', SimpleImputer(strategy='median'), ['booked_time', 'day_of_week']),
-                ('cat', OneHotEncoder(handle_unknown='ignore'), ['service'])
+                ('num', SimpleImputer(strategy='median'), numerical_cols),
+                ('cat', OneHotEncoder(handle_unknown='ignore'), categorical_cols)
             ])
 
-        new_model = Pipeline(steps=[('preprocessor', preprocessor),
-                                ('model', RandomForestRegressor(n_estimators=100))])
+        # n_estimators=200: Uses more "decision trees" for better consensus.
+        # max_depth=10: Prevents the model from memorizing noise (overfitting).
+        new_model = Pipeline(steps=[
+            ('preprocessor', preprocessor),
+            ('model', RandomForestRegressor(n_estimators=200, max_depth=10, random_state=42))
+        ])
         
         new_model.fit(X, y)
         logger.info(f"Model trained successfully on {len(df)} records.")
@@ -116,21 +139,7 @@ def train_model():
         logger.error(f"Training Failed: {e}")
         return None
 
-# --- Startup ---
-with server.app_context():
-    if SurgeryCase.query.first():
-         model = train_model()
-    else:
-        logger.warning("Database empty on startup. Please call /api/seed to load data.")
-        logger.info(f"Calling seed function")
-        success, message = seed_database_logic()
-        if success:logger.info(f"message : {message}")
-        else:
-            logger.info(f"message : {message}")
-
-# --- 4. API Endpoints ---
-
-# --- NEW: Seed Endpoint ---
+# --- API Endpoints ---
 @server.route('/api/seed', methods=['POST'])
 def seed_db():
     success, message = seed_database_logic()
@@ -142,7 +151,7 @@ def seed_db():
     else:
         return jsonify({"message": message, "status": "error"}), 400
 
-# --- NEW: Clear Endpoint ---
+# --- Clear Endpoint ---
 @server.route('/api/clear', methods=['DELETE'])
 def clear_db():
     try:
@@ -203,36 +212,52 @@ def predict():
         return jsonify({"error": "Model not trained. Please Seed DB first."}), 500
 
     try:
-        # Predict
-        input_data = pd.DataFrame([{
+        # Prepare input for the model
+        # We default 'complexity' to 2 (Medium) if the user didn't send it, 
+        # or if the model isn't trained to use it yet.
+        input_row = {
             'service': data['service'],
             'booked_time': float(data['booked_time']),
-            'day_of_week': pd.to_datetime(data['date']).dayofweek
-        }])
+            'day_of_week': pd.to_datetime(data['date']).dayofweek,
+            'or_suite': str(data['or_suite']),
+            'complexity': data.get('complexity', 2)
+        }
         
-        # Get the prediction result
+        input_data = pd.DataFrame([input_row])
+        
+        # Make Prediction
         prediction = model.predict(input_data)[0]
-        predicted_val = round(prediction, 1) # Store in variable
+        predicted_val = round(prediction, 1)
 
-        
-        # Save using the imported Model
+        # Update the Database Object
+        # NOTE: You must update your 'SurgeryCase' schema in database/schema.py 
+        # to include a 'complexity' column for this to save permanently.
         new_case = SurgeryCase(
             date=pd.to_datetime(data['date']),
             service=data['service'],
             booked_time=float(data['booked_time']),
             patient_name=data['patient_name'],
             or_suite=data['or_suite'],
-            actual_duration=predicted_val,
+            actual_duration=predicted_val, # Using the predicted value as discussed
             is_prediction=True
         )
         db.session.add(new_case)
         db.session.commit()
         
-        logger.info(f"New case saved. Prediction: {prediction:.1f}")
-        return jsonify({'predicted_duration': round(prediction, 1), 'patient': data['patient_name']})
+        logger.info(f"New case saved. Prediction: {predicted_val}")
+        return jsonify({'predicted_duration': predicted_val, 'patient': data['patient_name']})
     except Exception as e:
         logger.error(f"Prediction Error: {e}")
-        return jsonify({"error": str(e)}), 500
+        # Fallback: If the model crashes because it wasn't trained on 'complexity' yet,
+        # we try predicting WITHOUT complexity.
+        try:
+            logger.info("Attempting fallback prediction without complexity...")
+            del input_row['complexity']
+            input_data = pd.DataFrame([input_row])
+            prediction = model.predict(input_data)[0]
+            return jsonify({'predicted_duration': round(prediction, 1), 'patient': data['patient_name']})
+        except:
+            return jsonify({"error": str(e)}), 500
 
 @server.route('/api/retrain', methods=['POST'])
 def retrain():
