@@ -115,3 +115,14 @@ The Flask server (`server_new.py`) provides the following API endpoints:
 -   `POST /api/predict_average`: Provides a duration prediction based on historical averages for a given service.
 -   `GET /api/analytics`: Retrieves aggregate data for dashboard charts (e.g., case counts, average durations).
 -   `GET /api/analytics/status`: Retrieves high-level stats for the dashboard header.
+
+## Screenshots
+<img width="1915" height="911" alt="image" src="https://github.com/user-attachments/assets/2ad16682-37d2-4be4-8d35-e39bef5a8c69" />
+<img width="1913" height="914" alt="image" src="https://github.com/user-attachments/assets/cf7db046-b6dc-41fc-951b-a2b1d72ca5be" />
+<img width="1895" height="913" alt="image" src="https://github.com/user-attachments/assets/d18d3a1c-9129-4295-9239-6812244aa01b" />
+<img width="1919" height="909" alt="image" src="https://github.com/user-attachments/assets/1ba901f9-dafe-4463-93a3-c06dfbb9e746" />
+<img width="1919" height="900" alt="image" src="https://github.com/user-attachments/assets/7f07907d-3018-4139-81d1-8c959c761e3c" />
+
+
+
+
