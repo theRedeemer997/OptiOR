@@ -15,5 +15,6 @@ class SurgeryCase(db.Model):
     
     # Metadata
     patient_name = db.Column(db.String(100), nullable=True)
+    doctor_name = db.Column(db.String(100), nullable=True) # New field
     is_prediction = db.Column(db.Boolean, default=False)
     timestamp = db.Column(db.DateTime, default=datetime.utcnow)
